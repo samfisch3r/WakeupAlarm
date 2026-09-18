@@ -33,10 +33,7 @@ A minimalist, high-reliability alarm clock app built with **Kotlin** and **Jetpa
 
 ## 📦 Installation & Setup
 
-1. **Clone the project**:
-   ```bash
-   git clone https://github.com/your-repo/wakeup-alarm.git
-   ```
+1. **Clone project**
 2. **Open in Android Studio**: Use Ladybug or newer.
 3. **Build & Run**: Ensure you are targeting a device with API 33 (Android 13) or higher.
 
