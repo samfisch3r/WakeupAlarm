@@ -28,6 +28,9 @@ class AlarmReceiver : BroadcastReceiver() {
                     try {
                         val db = AlarmDatabase.getInstance(context)
                         val repository = AlarmRepository(db.alarmDao())
+                        val settings = db.alarmDao().getSettings().firstOrNull() ?: Settings()
+                        db.alarmDao().updateSettings(settings.copy(snoozeMusicPlaybackPosition = 0))
+
                         val alarm = repository.getAlarmById(alarmId)
                         if (alarm != null) {
                             val updated = alarm.copy(currentSnoozeCount = 0)
@@ -44,7 +47,6 @@ class AlarmReceiver : BroadcastReceiver() {
                 }
             }
             ACTION_SNOOZE -> {
-                context.stopService(Intent(context, AlarmService::class.java))
                 val pendingResult = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
@@ -59,6 +61,7 @@ class AlarmReceiver : BroadcastReceiver() {
                             AlarmScheduler(context).schedule(updated, snoozeTime)
                         }
                     } finally {
+                        context.stopService(Intent(context, AlarmService::class.java))
                         pendingResult.finish()
                     }
                 }

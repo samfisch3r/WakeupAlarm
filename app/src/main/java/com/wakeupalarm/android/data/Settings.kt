@@ -14,5 +14,6 @@ data class Settings(
     val vacationStartDate: Long? = null,
     val vacationEndDate: Long? = null,
     val globalVolume: Int = 70,
-    val globalVibrate: Boolean = true
+    val globalVibrate: Boolean = true,
+    val snoozeMusicPlaybackPosition: Int = 0
 )

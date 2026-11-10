@@ -194,6 +194,7 @@ class AlarmService : Service() {
             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
         
         val customUri = settings.globalMusicUri?.toUri()
+        val seekPosition = settings.snoozeMusicPlaybackPosition
 
         try {
             mediaPlayer = MediaPlayer().apply {
@@ -222,6 +223,11 @@ class AlarmService : Service() {
                 isLooping = true
                 setVolume(initialVolume, initialVolume)
                 prepare()
+
+                if (seekPosition > 0 && seekPosition < (this.duration - 2000)) {
+                    seekTo(seekPosition)
+                }
+
                 start()
             }
 
@@ -243,10 +249,33 @@ class AlarmService : Service() {
         val vibratorManager = getSystemService(VibratorManager::class.java)
         vibrator = vibratorManager?.defaultVibrator ?: @Suppress("DEPRECATION") (getSystemService(VIBRATOR_SERVICE) as? Vibrator)
         val pattern = longArrayOf(0, 500, 500)
-        vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0))
+        val waveform = VibrationEffect.createWaveform(pattern, 0)
+        val attributes = VibrationAttributes.Builder()
+            .setUsage(VibrationAttributes.USAGE_ALARM)
+            .build()
+        vibrator?.vibrate(waveform, attributes)
+    }
+
+    private fun savePlaybackPosition() {
+        try {
+            val mp = mediaPlayer
+            if (mp != null && mp.isPlaying) {
+                val currentPos = mp.currentPosition
+                val trackDuration = mp.duration
+                val posToSave = if (trackDuration > 0 && (trackDuration - currentPos > 2000)) currentPos else 0
+                val db = AlarmDatabase.getInstance(applicationContext)
+                CoroutineScope(Dispatchers.IO).launch {
+                    val settings = db.alarmDao().getSettings().firstOrNull() ?: Settings()
+                    db.alarmDao().updateSettings(settings.copy(snoozeMusicPlaybackPosition = posToSave))
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     override fun onDestroy() {
+        savePlaybackPosition()
         super.onDestroy()
         autoDismissHandler.removeCallbacks(autoDismissRunnable)
         try {

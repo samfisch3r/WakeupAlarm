@@ -8,7 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.wakeupalarm.android.service.AlarmService
+import com.wakeupalarm.android.receiver.AlarmReceiver
 import com.wakeupalarm.android.ui.AlarmViewModel
 import com.wakeupalarm.android.ui.components.AlarmScreen
 import com.wakeupalarm.android.ui.components.calculateNextAlarmInfo
@@ -36,13 +36,19 @@ class AlarmActivity : ComponentActivity() {
                     nextAlarmText = nextAlarmInfo?.displayString,
                     maxSnoozes = settings.defaultMaxSnoozes,
                     onDismiss = {
-                        viewModel.dismiss(alarmId)
-                        stopService(Intent(this, AlarmService::class.java))
+                        val dismissIntent = Intent(this, AlarmReceiver::class.java).apply {
+                            action = AlarmReceiver.ACTION_DISMISS
+                            putExtra("ALARM_ID", alarmId)
+                        }
+                        sendBroadcast(dismissIntent)
                         finish()
                     },
                     onSnooze = {
-                        viewModel.snooze(alarmId)
-                        stopService(Intent(this, AlarmService::class.java))
+                        val snoozeIntent = Intent(this, AlarmReceiver::class.java).apply {
+                            action = AlarmReceiver.ACTION_SNOOZE
+                            putExtra("ALARM_ID", alarmId)
+                        }
+                        sendBroadcast(snoozeIntent)
                         finish()
                     }
                 )
