@@ -6,7 +6,7 @@ import androidx.room.TypeConverters
 import android.content.Context
 import androidx.room.Room
 
-@Database(entities = [Alarm::class, Settings::class], version = 4, exportSchema = false)
+@Database(entities = [Alarm::class, Settings::class], version = 5, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AlarmDatabase : RoomDatabase() {
     abstract fun alarmDao(): AlarmDao
@@ -22,7 +22,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                     AlarmDatabase::class.java,
                     "alarm_database"
                 )
-                .fallbackToDestructiveMigration()
+                .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 INSTANCE = instance
                 instance

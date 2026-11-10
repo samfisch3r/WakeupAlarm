@@ -113,9 +113,7 @@ class AlarmViewModel(application: Application) : AndroidViewModel(application) {
                 val updated = alarm.copy(currentSnoozeCount = alarm.currentSnoozeCount + 1)
                 repository.updateAlarm(updated)
                 
-                val snoozeTime = Instant.now()
-                    .plus(Duration.ofMinutes(currentSettings.defaultSnoozeMinutes.toLong()))
-                    .toEpochMilli()
+                val snoozeTime = (Instant.now() + Duration.ofMinutes(currentSettings.defaultSnoozeMinutes.toLong())).toEpochMilli()
                 scheduler.schedule(updated, snoozeTime)
             }
         }

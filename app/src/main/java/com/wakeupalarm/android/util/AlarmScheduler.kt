@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import com.wakeupalarm.android.MainActivity
 import com.wakeupalarm.android.data.Alarm
 import com.wakeupalarm.android.receiver.AlarmReceiver
 import java.time.LocalDateTime
@@ -15,6 +16,7 @@ class AlarmScheduler(private val context: Context) {
 
     fun schedule(alarm: Alarm, timeInMillis: Long? = null) {
         val intent = Intent(context, AlarmReceiver::class.java).apply {
+            action = "com.wakeupalarm.android.ALARM_TRIGGER_${alarm.id}"
             putExtra("ALARM_ID", alarm.id)
         }
         val pendingIntent = PendingIntent.getBroadcast(
@@ -24,13 +26,31 @@ class AlarmScheduler(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val showIntent = Intent(context, MainActivity::class.java)
+        val showPendingIntent = PendingIntent.getActivity(
+            context,
+            alarm.id,
+            showIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val scheduledTime = timeInMillis ?: calculateNextTime(alarm)
 
-        alarmManager?.setExactAndAllowWhileIdle(
-            AlarmManager.RTC_WAKEUP,
-            scheduledTime,
-            pendingIntent
-        )
+        try {
+            val clockInfo = AlarmManager.AlarmClockInfo(scheduledTime, showPendingIntent)
+            alarmManager?.setAlarmClock(clockInfo, pendingIntent)
+        } catch (e: SecurityException) {
+            e.printStackTrace()
+            try {
+                alarmManager?.setAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    scheduledTime,
+                    pendingIntent
+                )
+            } catch (ex: Exception) {
+                ex.printStackTrace()
+            }
+        }
     }
 
     private fun calculateNextTime(alarm: Alarm): Long {
@@ -59,7 +79,10 @@ class AlarmScheduler(private val context: Context) {
     }
 
     fun cancel(alarm: Alarm) {
-        val intent = Intent(context, AlarmReceiver::class.java)
+        val intent = Intent(context, AlarmReceiver::class.java).apply {
+            action = "com.wakeupalarm.android.ALARM_TRIGGER_${alarm.id}"
+            putExtra("ALARM_ID", alarm.id)
+        }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
             alarm.id,

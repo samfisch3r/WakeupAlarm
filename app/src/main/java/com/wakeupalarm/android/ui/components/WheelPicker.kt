@@ -1,5 +1,6 @@
 package com.wakeupalarm.android.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -57,6 +58,16 @@ fun WheelPicker(
             .fillMaxWidth(),
         contentAlignment = Alignment.Center
     ) {
+        Box(
+            modifier = Modifier
+                .height(itemHeight)
+                .fillMaxWidth()
+                .background(
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
+                    shape = MaterialTheme.shapes.small
+                )
+        )
+
         LazyColumn(
             state = listState,
             flingBehavior = flingBehavior,

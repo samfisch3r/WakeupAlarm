@@ -1,5 +1,11 @@
 package com.wakeupalarm.android.ui.components
 
+import android.content.Context
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.core.net.toUri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -10,23 +16,29 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.wakeupalarm.android.R
 import com.wakeupalarm.android.data.Alarm
 import com.wakeupalarm.android.data.Settings
+import java.time.Duration
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,11 +49,15 @@ fun AlarmListScreen(
     onToggleAlarm: (Alarm) -> Unit,
     onDeleteAlarm: (Alarm) -> Unit,
     onUpdateAlarm: (Alarm) -> Unit,
-    onPickMusic: () -> Unit,
+    onPickMusic: ((Uri) -> Unit) -> Unit,
     onUpdateSettings: (Settings) -> Unit,
 ) {
     var editingAlarm by remember { mutableStateOf<Alarm?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+
+    val nextAlarmInfo = remember(alarms, settings) {
+        calculateNextAlarmInfo(alarms, settings)
+    }
 
     Scaffold(
         topBar = {
@@ -60,20 +76,90 @@ fun AlarmListScreen(
             }
         },
     ) { padding ->
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .padding(padding)
-                .fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .fillMaxSize()
         ) {
-            items(alarms) { alarm ->
-                AlarmItem(
-                    alarm = alarm,
-                    onToggle = { onToggleAlarm(alarm) },
-                    onDelete = { onDeleteAlarm(alarm) },
-                    onEdit = { editingAlarm = alarm },
-                )
+            nextAlarmInfo?.let { info ->
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Notifications,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Next Scheduled Alarm",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = info.displayString,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (alarms.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Notifications,
+                            contentDescription = null,
+                            modifier = Modifier.size(72.dp),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "No Alarms Set",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Tap + below to create a new alarm",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(alarms) { alarm ->
+                        AlarmItem(
+                            alarm = alarm,
+                            onToggle = { onToggleAlarm(alarm) },
+                            onDelete = { onDeleteAlarm(alarm) },
+                            onEdit = { editingAlarm = alarm },
+                        )
+                    }
+                }
             }
         }
 
@@ -107,27 +193,87 @@ fun SettingsDialog(
     settings: Settings,
     onDismiss: () -> Unit,
     onConfirm: (Settings) -> Unit,
-    onPickMusic: () -> Unit,
+    onPickMusic: ((Uri) -> Unit) -> Unit,
 ) {
+    val context = LocalContext.current
     var snoozeMinutes by remember { mutableIntStateOf(settings.defaultSnoozeMinutes) }
     var maxSnoozes by remember { mutableIntStateOf(settings.defaultMaxSnoozes) }
     var gradualIncreaseSeconds by remember { mutableIntStateOf(settings.gradualIncreaseSeconds) }
+    var globalVolume by remember { mutableFloatStateOf(settings.globalVolume.toFloat()) }
+    var globalVibrate by remember { mutableStateOf(settings.globalVibrate) }
     var vacationEnabled by remember { mutableStateOf(settings.vacationModeEnabled) }
     var vacationStart by remember { mutableStateOf(settings.vacationStartDate) }
     var vacationEnd by remember { mutableStateOf(settings.vacationEndDate) }
+    var customMusicUri by remember { mutableStateOf(settings.globalMusicUri) }
 
-    var activePicker by remember { mutableStateOf<String?>(null) } // "snooze", "max", "gradual"
+    LaunchedEffect(settings.globalMusicUri) {
+        customMusicUri = settings.globalMusicUri
+    }
+
+    var previewPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var isPreviewPlaying by remember { mutableStateOf(false) }
+
+    val fileName = remember(customMusicUri) {
+        getFileNameFromUri(context, customMusicUri)
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            previewPlayer?.stop()
+            previewPlayer?.release()
+            previewPlayer = null
+        }
+    }
+
+    var activePicker by remember { mutableStateOf<String?>(null) }
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showEndDatePicker by remember { mutableStateOf(false) }
 
-    val dateFormatter = remember { DateTimeFormatter.ofPattern("MMM dd, yyyy").withZone(ZoneId.systemDefault()) }
-
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            previewPlayer?.stop()
+            previewPlayer?.release()
+            previewPlayer = null
+            onDismiss()
+        },
         title = { Text(stringResource(R.string.dialog_global_settings)) },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                // Snooze Selection
+                // Volume slider
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = "Alarm Volume", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        text = "${globalVolume.roundToInt()}%",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Slider(
+                    value = globalVolume,
+                    onValueChange = { globalVolume = it },
+                    valueRange = 0f..100f,
+                    steps = 100,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Vibration toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = "Vibrate on Alarm", style = MaterialTheme.typography.bodyLarge)
+                    Switch(checked = globalVibrate, onCheckedChange = { globalVibrate = it })
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -141,6 +287,7 @@ fun SettingsDialog(
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.End
                     )
                 }
                 if (activePicker == "snooze") {
@@ -151,7 +298,6 @@ fun SettingsDialog(
                     )
                 }
 
-                // Max Snoozes Selection
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -161,10 +307,11 @@ fun SettingsDialog(
                 ) {
                     Text(stringResource(R.string.label_max_snoozes), style = MaterialTheme.typography.bodyLarge)
                     Text(
-                        text = "$maxSnoozes",
+                        text = maxSnoozes.toString(),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.End
                     )
                 }
                 if (activePicker == "max") {
@@ -175,7 +322,6 @@ fun SettingsDialog(
                     )
                 }
 
-                // Gradual Increase Selection
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -189,6 +335,7 @@ fun SettingsDialog(
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.End
                     )
                 }
                 if (activePicker == "gradual") {
@@ -201,21 +348,88 @@ fun SettingsDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(
-                    onClick = onPickMusic,
+                    onClick = {
+                        previewPlayer?.stop()
+                        previewPlayer?.release()
+                        previewPlayer = null
+                        isPreviewPlaying = false
+                        onPickMusic { uri ->
+                            customMusicUri = uri.toString()
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
-                        if (settings.globalMusicUri == null) stringResource(R.string.action_pick_sound)
+                        if (customMusicUri == null) stringResource(R.string.action_pick_sound)
                         else stringResource(R.string.action_change_sound),
                     )
                 }
-                if (settings.globalMusicUri != null) {
-                    Text(
-                        text = stringResource(R.string.label_sound_selected),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
+
+                if (customMusicUri != null) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "Selected: ${fileName ?: "Custom Audio"}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        if (isPreviewPlaying) {
+                                            previewPlayer?.stop()
+                                            previewPlayer?.release()
+                                            previewPlayer = null
+                                            isPreviewPlaying = false
+                                        } else {
+                                            try {
+                                                previewPlayer?.release()
+                                                previewPlayer = MediaPlayer().apply {
+                                                    setAudioAttributes(
+                                                        AudioAttributes.Builder()
+                                                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                                                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                                                            .build()
+                                                    )
+                                                    setDataSource(context, Uri.parse(customMusicUri))
+                                                    prepare()
+                                                    start()
+                                                    setOnCompletionListener {
+                                                        isPreviewPlaying = false
+                                                    }
+                                                }
+                                                isPreviewPlaying = true
+                                            } catch (e: Exception) {
+                                                e.printStackTrace()
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Text(if (isPreviewPlaying) "Stop Preview" else "Preview Sound")
+                                }
+
+                                TextButton(onClick = {
+                                    previewPlayer?.stop()
+                                    previewPlayer?.release()
+                                    previewPlayer = null
+                                    isPreviewPlaying = false
+                                    customMusicUri = null
+                                }) {
+                                    Text("Reset Sound", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
                 }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
@@ -236,14 +450,14 @@ fun SettingsDialog(
                             onClick = { showStartDatePicker = true },
                             modifier = Modifier.weight(1f),
                         ) {
-                            val startText = vacationStart?.let { dateFormatter.format(Instant.ofEpochMilli(it)) } ?: stringResource(R.string.label_start_date)
+                            val startText = vacationStart?.let { DateTimeFormatter.ofPattern("MMM dd, yyyy").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it)) } ?: stringResource(R.string.label_start_date)
                             Text(startText, style = MaterialTheme.typography.labelSmall)
                         }
                         OutlinedButton(
                             onClick = { showEndDatePicker = true },
                             modifier = Modifier.weight(1f),
                         ) {
-                            val endText = vacationEnd?.let { dateFormatter.format(Instant.ofEpochMilli(it)) } ?: stringResource(R.string.label_end_date)
+                            val endText = vacationEnd?.let { DateTimeFormatter.ofPattern("MMM dd, yyyy").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it)) } ?: stringResource(R.string.label_end_date)
                             Text(endText, style = MaterialTheme.typography.labelSmall)
                         }
                     }
@@ -252,14 +466,20 @@ fun SettingsDialog(
         },
         confirmButton = {
             Button(onClick = {
+                previewPlayer?.stop()
+                previewPlayer?.release()
+                previewPlayer = null
                 onConfirm(
                     settings.copy(
                         defaultSnoozeMinutes = snoozeMinutes,
                         defaultMaxSnoozes = maxSnoozes,
                         gradualIncreaseSeconds = gradualIncreaseSeconds,
+                        globalVolume = globalVolume.roundToInt(),
+                        globalVibrate = globalVibrate,
                         vacationModeEnabled = vacationEnabled,
                         vacationStartDate = vacationStart,
                         vacationEndDate = vacationEnd,
+                        globalMusicUri = customMusicUri
                     ),
                 )
             }) {
@@ -267,7 +487,12 @@ fun SettingsDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            TextButton(onClick = {
+                previewPlayer?.stop()
+                previewPlayer?.release()
+                previewPlayer = null
+                onDismiss()
+            }) { Text(stringResource(R.string.action_cancel)) }
         },
     )
 
@@ -315,6 +540,8 @@ fun AlarmItem(
     onDelete: () -> Unit,
     onEdit: () -> Unit,
 ) {
+    val timeFormatter = remember { DateTimeFormatter.ofPattern("HH:mm") }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -328,7 +555,6 @@ fun AlarmItem(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Column {
-                val timeFormatter = remember { DateTimeFormatter.ofPattern("HH:mm") }
                 Text(
                     text = LocalTime.of(alarm.hour, alarm.minute).format(timeFormatter),
                     style = MaterialTheme.typography.headlineMedium,
@@ -362,7 +588,10 @@ fun EditAlarmDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.dialog_edit_alarm)) },
         text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -453,7 +682,7 @@ fun EditAlarmDialog(
                     alarm.copy(
                         hour = hour, 
                         minute = minute, 
-                        repeatDays = repeatDays,
+                        repeatDays = repeatDays
                     ),
                 ) 
             }) {
@@ -469,6 +698,7 @@ fun EditAlarmDialog(
 @Composable
 fun AlarmScreen(
     alarm: Alarm?,
+    nextAlarmText: String? = null,
     maxSnoozes: Int,
     onDismiss: () -> Unit,
     onSnooze: () -> Unit,
@@ -477,7 +707,6 @@ fun AlarmScreen(
     val snoozeCount = alarm?.currentSnoozeCount ?: 0
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Snooze area (90%)
         Box(
             modifier = Modifier
                 .weight(0.9f)
@@ -507,10 +736,18 @@ fun AlarmScreen(
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f),
                     )
                 }
+
+                if (!nextAlarmText.isNullOrEmpty()) {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text(
+                        text = "Next alarm: $nextAlarmText",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                    )
+                }
             }
         }
 
-        // Dismiss area (10%)
         Box(
             modifier = Modifier
                 .weight(0.1f)
@@ -557,3 +794,90 @@ private fun dayOfWeekRes(day: Int): Int {
         else -> 0
     }
 }
+
+fun calculateNextAlarmInfo(alarms: List<Alarm>, settings: Settings): NextAlarmInfo? {
+    val enabledAlarms = alarms.filter { it.isEnabled }
+    if (enabledAlarms.isEmpty()) return null
+
+    val now = LocalDateTime.now()
+
+    if (settings.vacationModeEnabled) {
+        val nowMs = Instant.now().toEpochMilli()
+        val start = settings.vacationStartDate ?: 0L
+        val end = (settings.vacationEndDate ?: 0L) + 86_399_999L
+        if (nowMs in start..end) {
+            val nonRepeating = enabledAlarms.filter { it.repeatDays.isEmpty() }
+            if (nonRepeating.isEmpty()) return null
+        }
+    }
+
+    val upcomingTimes = enabledAlarms.map { alarm ->
+        var target = LocalDateTime.of(now.toLocalDate(), LocalTime.of(alarm.hour, alarm.minute))
+        if (target.isBefore(now) || target.isEqual(now)) {
+            target = target.plusDays(1)
+        }
+        if (alarm.repeatDays.isNotEmpty()) {
+            while (!alarm.repeatDays.contains(target.dayOfWeek.value)) {
+                target = target.plusDays(1)
+            }
+        }
+        target
+    }
+
+    val nextTarget = upcomingTimes.minOrNull() ?: return null
+
+    val duration = Duration.between(now, nextTarget)
+    val totalMinutes = duration.toMinutes()
+    val hours = totalMinutes / 60
+    val mins = totalMinutes % 60
+
+    val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
+    val timeFormatted = nextTarget.format(timeFormat)
+
+    val dayText = when {
+        nextTarget.toLocalDate() == now.toLocalDate() -> "Today"
+        nextTarget.toLocalDate() == now.toLocalDate().plusDays(1) -> "Tomorrow"
+        else -> nextTarget.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())
+    }
+
+    val remainingText = when {
+        hours > 0 && mins > 0 -> "$hours hr $mins min"
+        hours > 0 -> "$hours hr"
+        mins > 0 -> "$mins min"
+        else -> "< 1 min"
+    }
+
+    return NextAlarmInfo(
+        displayString = "$dayText at $timeFormatted (in $remainingText)",
+        targetDateTime = nextTarget
+    )
+}
+
+fun getFileNameFromUri(context: Context, uriString: String?): String? {
+    if (uriString.isNullOrEmpty()) return null
+    val uri = uriString.toUri()
+    var fileName: String? = null
+    if (uri.scheme == "content") {
+        try {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val columnIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (columnIndex != -1) {
+                        fileName = cursor.getString(columnIndex)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    if (fileName == null) {
+        fileName = uri.path?.substringAfterLast('/')
+    }
+    return fileName
+}
+
+data class NextAlarmInfo(
+    val displayString: String,
+    val targetDateTime: LocalDateTime
+)

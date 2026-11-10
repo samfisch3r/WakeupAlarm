@@ -13,15 +13,20 @@ import kotlinx.coroutines.launch
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
+            val pendingResult = goAsync()
             val scheduler = AlarmScheduler(context)
             val db = AlarmDatabase.getInstance(context)
             
             CoroutineScope(Dispatchers.IO).launch {
-                val alarms = db.alarmDao().getAllAlarms().first()
-                alarms.forEach { alarm ->
-                    if (alarm.isEnabled) {
-                        scheduler.schedule(alarm)
+                try {
+                    val alarms = db.alarmDao().getAllAlarms().first()
+                    alarms.forEach { alarm ->
+                        if (alarm.isEnabled) {
+                            scheduler.schedule(alarm)
+                        }
                     }
+                } finally {
+                    pendingResult.finish()
                 }
             }
         }

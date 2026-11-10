@@ -1,6 +1,7 @@
 package com.wakeupalarm.android
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.AlarmManager
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -27,6 +28,7 @@ import com.wakeupalarm.android.ui.components.AlarmListScreen
 import com.wakeupalarm.android.ui.theme.WakeupAlarmTheme
 
 class MainActivity : ComponentActivity() {
+    @SuppressLint("BatteryLife")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -44,10 +46,10 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(lifecycleState) {
                     if (lifecycleState == Lifecycle.State.RESUMED) {
                         val pm = getSystemService(PowerManager::class.java)
-                        showBatteryDialog = pm != null && !pm.isIgnoringBatteryOptimizations(packageName)
+                        showBatteryDialog = (pm != null) && (!pm.isIgnoringBatteryOptimizations(packageName))
 
                         val alarmManager = getSystemService(AlarmManager::class.java)
-                        showAlarmPermissionDialog = alarmManager != null && !alarmManager.canScheduleExactAlarms()
+                        showAlarmPermissionDialog = (alarmManager != null) && (!alarmManager.canScheduleExactAlarms())
                     }
                 }
 
@@ -59,8 +61,16 @@ class MainActivity : ComponentActivity() {
                         confirmButton = {
                             Button(onClick = {
                                 showBatteryDialog = false
-                                val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                                startActivity(intent)
+                                try {
+                                    val intent = Intent(
+                                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                        "package:$packageName".toUri()
+                                    )
+                                    startActivity(intent)
+                                } catch (_: Exception) {
+                                    val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                    startActivity(intent)
+                                }
                             }) {
                                 Text(stringResource(R.string.action_go_to_settings))
                             }
@@ -105,11 +115,21 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 
+                var musicPickedCallback by remember { mutableStateOf<((Uri) -> Unit)?>(null) }
+
                 val musicPickerLauncher = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.GetContent()
+                    contract = ActivityResultContracts.OpenDocument()
                 ) { uri: Uri? ->
                     uri?.let { selectedUri ->
-                        viewModel.updateSettings(settings.copy(globalMusicUri = selectedUri.toString()))
+                        try {
+                            contentResolver.takePersistableUriPermission(
+                                selectedUri,
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            )
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                        musicPickedCallback?.invoke(selectedUri)
                     }
                 }
 
@@ -122,8 +142,9 @@ class MainActivity : ComponentActivity() {
                     onToggleAlarm = { viewModel.toggleAlarm(it) },
                     onDeleteAlarm = { viewModel.deleteAlarm(it) },
                     onUpdateAlarm = { viewModel.updateAlarm(it) },
-                    onPickMusic = {
-                        musicPickerLauncher.launch("audio/*")
+                    onPickMusic = { callback ->
+                        musicPickedCallback = callback
+                        musicPickerLauncher.launch(arrayOf("audio/*", "application/ogg"))
                     },
                     onUpdateSettings = { viewModel.updateSettings(it) }
                 )
