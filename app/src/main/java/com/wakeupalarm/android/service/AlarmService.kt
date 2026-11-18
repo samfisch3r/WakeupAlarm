@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.*
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.os.*
@@ -24,6 +25,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 class AlarmService : Service() {
     private var mediaPlayer: MediaPlayer? = null
@@ -34,6 +36,7 @@ class AlarmService : Service() {
 
     private val autoDismissHandler = Handler(Looper.getMainLooper())
     private var currentAlarmId: Int = -1
+    private var previousStreamVolume: Int = -1
 
     private val autoDismissRunnable = Runnable {
         if (currentAlarmId != -1) {
@@ -183,12 +186,27 @@ class AlarmService : Service() {
     }
 
     private fun playMusic(settings: Settings) {
-        val maxVolume = (settings.globalVolume / 100f).coerceIn(0f, 1f)
-        val duration = settings.gradualIncreaseSeconds * 1000L
-        val interval = 500L
-        val steps = if (duration > 0) duration / interval else 0
+        val audioManager = getSystemService(AudioManager::class.java)
+        if (audioManager != null) {
+            try {
+                val currentVol = audioManager.getStreamVolume(AudioManager.STREAM_ALARM)
+                if (previousStreamVolume == -1) {
+                    previousStreamVolume = currentVol
+                }
+                val maxStreamVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+                val targetStreamVol = ((settings.globalVolume / 100f) * maxStreamVol).roundToInt().coerceIn(1, maxStreamVol)
+                audioManager.setStreamVolume(AudioManager.STREAM_ALARM, targetStreamVol, 0)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
 
-        val initialVolume = if (steps > 0) (1.toFloat() / steps) * maxVolume else maxVolume
+        val targetVolFraction = (settings.globalVolume / 100f).coerceIn(0.1f, 1.0f)
+        val durationMs = settings.gradualIncreaseSeconds * 1000L
+        val intervalMs = 500L
+        val steps = if (durationMs > 0) (durationMs / intervalMs).toInt() else 0
+
+        val startVolFraction = if (steps > 0) (0.15f * targetVolFraction).coerceAtLeast(0.05f) else targetVolFraction
 
         val defaultUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
@@ -221,7 +239,7 @@ class AlarmService : Service() {
                 }
 
                 isLooping = true
-                setVolume(initialVolume, initialVolume)
+                setVolume(startVolFraction, startVolFraction)
                 prepare()
 
                 if (seekPosition > 0 && seekPosition < (this.duration - 2000)) {
@@ -234,9 +252,10 @@ class AlarmService : Service() {
             if (steps > 0) {
                 serviceScope.launch {
                     for (i in 1..steps) {
-                        val currentVol = (i.toFloat() / steps) * maxVolume
+                        val progress = i.toFloat() / steps
+                        val currentVol = startVolFraction + progress * (targetVolFraction - startVolFraction)
                         mediaPlayer?.setVolume(currentVol, currentVol)
-                        delay(interval)
+                        delay(intervalMs)
                     }
                 }
             }
@@ -278,6 +297,17 @@ class AlarmService : Service() {
         savePlaybackPosition()
         super.onDestroy()
         autoDismissHandler.removeCallbacks(autoDismissRunnable)
+
+        if (previousStreamVolume != -1) {
+            val audioManager = getSystemService(AudioManager::class.java)
+            try {
+                audioManager?.setStreamVolume(AudioManager.STREAM_ALARM, previousStreamVolume, 0)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            previousStreamVolume = -1
+        }
+
         try {
             if (mediaPlayer?.isPlaying == true) {
                 mediaPlayer?.stop()
