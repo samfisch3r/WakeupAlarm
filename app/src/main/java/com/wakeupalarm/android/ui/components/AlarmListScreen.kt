@@ -199,6 +199,7 @@ fun SettingsDialog(
     var snoozeMinutes by remember { mutableIntStateOf(settings.defaultSnoozeMinutes) }
     var maxSnoozes by remember { mutableIntStateOf(settings.defaultMaxSnoozes) }
     var gradualIncreaseSeconds by remember { mutableIntStateOf(settings.gradualIncreaseSeconds) }
+    var startVolume by remember { mutableFloatStateOf(settings.startVolume.toFloat()) }
     var globalVolume by remember { mutableFloatStateOf(settings.globalVolume.toFloat()) }
     var globalVibrate by remember { mutableStateOf(settings.globalVibrate) }
     var vacationEnabled by remember { mutableStateOf(settings.vacationModeEnabled) }
@@ -239,13 +240,41 @@ fun SettingsDialog(
         title = { Text(stringResource(R.string.dialog_global_settings)) },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                // Volume slider
+                // Start Volume slider
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(text = "Alarm Volume", style = MaterialTheme.typography.bodyLarge)
+                    Text(text = "Start Volume", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        text = "${startVolume.roundToInt()}%",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Slider(
+                    value = startVolume,
+                    onValueChange = { 
+                        startVolume = it
+                        if (startVolume > globalVolume) {
+                            globalVolume = startVolume
+                        }
+                    },
+                    valueRange = 0f..100f,
+                    steps = 100,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Target Volume slider
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = "Target Volume", style = MaterialTheme.typography.bodyLarge)
                     Text(
                         text = "${globalVolume.roundToInt()}%",
                         style = MaterialTheme.typography.bodyMedium,
@@ -254,7 +283,12 @@ fun SettingsDialog(
                 }
                 Slider(
                     value = globalVolume,
-                    onValueChange = { globalVolume = it },
+                    onValueChange = { 
+                        globalVolume = it
+                        if (globalVolume < startVolume) {
+                            startVolume = globalVolume
+                        }
+                    },
                     valueRange = 0f..100f,
                     steps = 100,
                     modifier = Modifier.fillMaxWidth()
@@ -474,6 +508,7 @@ fun SettingsDialog(
                         defaultSnoozeMinutes = snoozeMinutes,
                         defaultMaxSnoozes = maxSnoozes,
                         gradualIncreaseSeconds = gradualIncreaseSeconds,
+                        startVolume = startVolume.roundToInt(),
                         globalVolume = globalVolume.roundToInt(),
                         globalVibrate = globalVibrate,
                         vacationModeEnabled = vacationEnabled,

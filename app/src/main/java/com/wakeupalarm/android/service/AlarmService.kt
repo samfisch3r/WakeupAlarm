@@ -25,7 +25,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 class AlarmService : Service() {
     private var mediaPlayer: MediaPlayer? = null
@@ -194,19 +193,17 @@ class AlarmService : Service() {
                     previousStreamVolume = currentVol
                 }
                 val maxStreamVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
-                val targetStreamVol = ((settings.globalVolume / 100f) * maxStreamVol).roundToInt().coerceIn(1, maxStreamVol)
-                audioManager.setStreamVolume(AudioManager.STREAM_ALARM, targetStreamVol, 0)
+                audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxStreamVol, 0)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
 
-        val targetVolFraction = (settings.globalVolume / 100f).coerceIn(0.1f, 1.0f)
+        val startVolFraction = (settings.startVolume / 100f).coerceIn(0.0f, 1.0f)
+        val targetVolFraction = (settings.globalVolume / 100f).coerceIn(startVolFraction, 1.0f)
         val durationMs = settings.gradualIncreaseSeconds * 1000L
         val intervalMs = 500L
         val steps = if (durationMs > 0) (durationMs / intervalMs).toInt() else 0
-
-        val startVolFraction = if (steps > 0) (0.15f * targetVolFraction).coerceAtLeast(0.05f) else targetVolFraction
 
         val defaultUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
@@ -219,7 +216,7 @@ class AlarmService : Service() {
                 setAudioAttributes(
                     AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                         .build()
                 )
                 

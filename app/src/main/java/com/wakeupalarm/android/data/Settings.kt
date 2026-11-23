@@ -9,11 +9,12 @@ data class Settings(
     val defaultSnoozeMinutes: Int = 5,
     val defaultMaxSnoozes: Int = 3,
     val globalMusicUri: String? = null,
+    val startVolume: Int = 20,
+    val globalVolume: Int = 100,
     val gradualIncreaseSeconds: Int = 60,
     val vacationModeEnabled: Boolean = false,
     val vacationStartDate: Long? = null,
     val vacationEndDate: Long? = null,
-    val globalVolume: Int = 70,
     val globalVibrate: Boolean = true,
     val snoozeMusicPlaybackPosition: Int = 0
 )
