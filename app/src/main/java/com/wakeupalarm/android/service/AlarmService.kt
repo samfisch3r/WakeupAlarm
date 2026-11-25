@@ -99,7 +99,7 @@ class AlarmService : Service() {
                 return@launch
             }
 
-            val settings = db.alarmDao().getSettings().firstOrNull() ?: Settings()
+            var settings = db.alarmDao().getSettings().firstOrNull() ?: Settings()
 
             if (settings.vacationModeEnabled && alarm.repeatDays.isNotEmpty()) {
                 val now = Instant.now().toEpochMilli()
@@ -113,11 +113,17 @@ class AlarmService : Service() {
                 }
             }
 
+            val isSnoozeRing = alarm.currentSnoozeCount > 0
+            if (!isSnoozeRing && settings.snoozeMusicPlaybackPosition != 0) {
+                settings = settings.copy(snoozeMusicPlaybackPosition = 0)
+                db.alarmDao().updateSettings(settings)
+            }
+
             autoDismissHandler.removeCallbacks(autoDismissRunnable)
             autoDismissHandler.postDelayed(autoDismissRunnable, 10 * 60 * 1000L)
 
             showNotificationAndLaunchActivity(alarm, settings)
-            playMusic(settings)
+            playMusic(settings, isSnoozeRing)
             if (settings.globalVibrate) startVibration()
         }
     }
@@ -184,7 +190,7 @@ class AlarmService : Service() {
         }
     }
 
-    private fun playMusic(settings: Settings) {
+    private fun playMusic(settings: Settings, isSnoozeRing: Boolean) {
         val audioManager = getSystemService(AudioManager::class.java)
         if (audioManager != null) {
             try {
@@ -209,7 +215,7 @@ class AlarmService : Service() {
             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
         
         val customUri = settings.globalMusicUri?.toUri()
-        val seekPosition = settings.snoozeMusicPlaybackPosition
+        val seekPosition = if (isSnoozeRing) settings.snoozeMusicPlaybackPosition else 0
 
         try {
             mediaPlayer = MediaPlayer().apply {
@@ -239,7 +245,7 @@ class AlarmService : Service() {
                 setVolume(startVolFraction, startVolFraction)
                 prepare()
 
-                if (seekPosition > 0 && seekPosition < (this.duration - 2000)) {
+                if (isSnoozeRing && seekPosition > 0 && seekPosition < (this.duration - 2000)) {
                     seekTo(seekPosition)
                 }
 
